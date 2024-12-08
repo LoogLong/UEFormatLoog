@@ -49,7 +49,7 @@ public:
 	float FramesPerSecond;
 	TArray<FTrack> Tracks;
 	TArray<FCurve> Curves;
-
+	std::string SkeletonPath;
 private:
 	std::ifstream Ar;
 };

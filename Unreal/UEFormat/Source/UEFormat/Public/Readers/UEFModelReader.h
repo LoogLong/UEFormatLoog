@@ -72,7 +72,8 @@ struct FSocketChunk {
 };
 struct FMaterialChunk {
     int32 MatIndex;
-    std::string Name;
+    std::string MaterialName;
+    std::string SlotName;
     int32 FirstIndex;
     int32 NumFaces;
 };
@@ -110,6 +111,7 @@ struct FLODData {
 struct FSkeletonData {
     TArray<FBoneChunk> Bones;
     TArray<FSocketChunk> Sockets;
+    std::string SkeletonPath;
 };
 
 class UEFModelReader {

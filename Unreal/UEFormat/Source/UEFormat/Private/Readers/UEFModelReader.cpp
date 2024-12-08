@@ -101,12 +101,11 @@ bool UEFModelReader::Read() {
 
 void UEFModelReader::ReadBuffer(const char* Buffer, int32 BufferSize) {
     int32 Offset = 0;
-
     while (Offset < BufferSize) {
         std::string ChunkName = ReadBufferFString(Buffer, Offset);
         int32 ArraySize = ReadBufferData<int32>(Buffer, Offset);
         int32 ByteSize = ReadBufferData<int32>(Buffer, Offset);
-
+    
         if (ChunkName == "LODS") {
             LODs.SetNum(ArraySize);
             for (int32 index = 0; index < ArraySize; ++index) {
@@ -116,7 +115,11 @@ void UEFModelReader::ReadBuffer(const char* Buffer, int32 BufferSize) {
             }
         } else if (ChunkName == "SKELETON") {
             ReadChunks(Buffer, Offset, ChunkName, 0, ByteSize, 0);
-        } else {
+        }
+        else if (ChunkName == "SkeletalMeshProperty") {
+            Skeleton.SkeletonPath = ReadBufferFString(Buffer, Offset);
+        }
+    	else {
             Offset += ByteSize;
         }
     }
@@ -149,7 +152,8 @@ void UEFModelReader::ReadChunks(const char* Buffer, int32& Offset, const std::st
             LODs[LODIndex].Materials.SetNum(InnerArraySize);
             for (auto i = 0; i < InnerArraySize; i++) {
                 LODs[LODIndex].Materials[i].MatIndex = i;
-                LODs[LODIndex].Materials[i].Name = ReadBufferFString(Buffer, InnerOffset);
+                LODs[LODIndex].Materials[i].MaterialName = ReadBufferFString(Buffer, InnerOffset);
+                LODs[LODIndex].Materials[i].SlotName = ReadBufferFString(Buffer, InnerOffset);
                 LODs[LODIndex].Materials[i].FirstIndex = ReadBufferData<int32>(Buffer, InnerOffset);
                 LODs[LODIndex].Materials[i].NumFaces = ReadBufferData<int32>(Buffer, InnerOffset);
             }
@@ -189,6 +193,10 @@ void UEFModelReader::ReadChunks(const char* Buffer, int32& Offset, const std::st
                 LODs[LODIndex].Weights[i].WeightAmount = ReadBufferData<float>(Buffer, InnerOffset);
             }
         } else if (InnerChunkName == "MORPHTARGETS") {
+            if (InnerByteSize == 0)
+            {
+                continue;
+            }
             LODs[LODIndex].Morphs.SetNum(InnerArraySize);
             for (auto i = 0; i < InnerArraySize; i++) {
                 LODs[LODIndex].Morphs[i].MorphName = ReadBufferFString(Buffer, InnerOffset);

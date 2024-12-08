@@ -19,11 +19,14 @@ class UEFORMAT_API UEFModelFactory : public UFactory
 	bool bImport;
 	bool bImportAll;
 
+	UPROPERTY(BlueprintReadWrite)
+	bool bSilentImport;
+
 	virtual UObject* FactoryCreateFile(UClass* Class, UObject* Parent, FName Name, EObjectFlags Flags, const FString& Filename, const TCHAR* Params, FFeedbackContext* Warn, bool& bOutOperationCanceled) override;
 
 	UStaticMesh* CreateStaticMesh(FLODData& Data, FName Name, UObject* Parent, EObjectFlags Flags);
 
-	USkeletalMesh* CreateSkeletalMeshFromStatic(FString Name, FSkeletonData& SkeletonData, FLODData& Data, UStaticMesh* Mesh, EObjectFlags Flags);
+	USkeletalMesh* CreateSkeletalMeshFromStatic(FString Name, FSkeletonData& SkeletonData, TArray<FLODData>& Datas, UStaticMesh* Mesh, EObjectFlags Flags);
 
 	USkeleton* CreateSkeleton(FString Name, UPackage* ParentPackage, EObjectFlags Flags, FSkeletonData& Data, FReferenceSkeleton& RefSkeleton, FSkeletalMeshImportData&
 	                          SkeletalMeshImportData);

@@ -18,6 +18,7 @@ UEFModelFactory::UEFModelFactory( const FObjectInitializer& ObjectInitializer )
 	SupportedClass = UStaticMesh::StaticClass();
 	bCreateNew = false;
 	bEditorImport = true;
+	bSilentImport = false;
 	SettingsImporter = CreateDefaultSubobject<UEFSkelMeshImportOptions>(TEXT("Skeletal Mesh Options"));
 }
 
@@ -44,7 +45,7 @@ UObject* UEFModelFactory::FactoryCreateFile(UClass* Class, UObject* Parent, FNam
 	
 	if (Data.Skeleton.Bones.Num() > 0)
 	{
-		USkeletalMesh* SkeletalMesh = CreateSkeletalMeshFromStatic(Data.Header.ObjectName.c_str(), Data.Skeleton, Data.LODs[0], StaticMesh, Flags);
+		USkeletalMesh* SkeletalMesh = CreateSkeletalMeshFromStatic(Data.Header.ObjectName.c_str(), Data.Skeleton, Data.LODs, StaticMesh, Flags);
 		StaticMesh->RemoveFromRoot();
 		StaticMesh->MarkAsGarbage();
 		return SkeletalMesh;
@@ -107,7 +108,7 @@ UStaticMesh* UEFModelFactory::CreateStaticMesh(FLODData& Data, FName Name, UObje
             VertexInstanceUVs.Set(VertexInstanceID, u, Data.TextureCoordinates[u][index]);
     }
 	
-    for (auto [MatIndex, MatName, FirstIndex, NumFaces] : Data.Materials) {
+	for (auto& [MatIndex, MatName, SlotName, FirstIndex, NumFaces] : Data.Materials) {
         FPolygonGroupID PolygonGroup = MeshDesc.CreatePolygonGroup();
         for (auto i = FirstIndex; i < FirstIndex + (NumFaces * 3); i += 3) {
             FVertexInstanceID& VI0 = VertexInstanceIDs[i];
@@ -115,11 +116,14 @@ UStaticMesh* UEFModelFactory::CreateStaticMesh(FLODData& Data, FName Name, UObje
             FVertexInstanceID& VI2 = VertexInstanceIDs[i + 2];
             MeshDesc.CreatePolygon(PolygonGroup, { VI0, VI1, VI2 });
         }
-        Attributes.GetPolygonGroupMaterialSlotNames()[PolygonGroup] = MatName.c_str();
+        Attributes.GetPolygonGroupMaterialSlotNames()[PolygonGroup] = SlotName.c_str();
 
         FStaticMaterial StaticMat = FStaticMaterial();
-        StaticMat.MaterialSlotName = MatName.c_str();
-        StaticMat.ImportedMaterialSlotName = MatName.c_str();
+        StaticMat.MaterialSlotName = SlotName.c_str();
+        StaticMat.ImportedMaterialSlotName = SlotName.c_str();
+		FString MaterialName = FString(MatName.c_str());
+		MaterialName.ReplaceInline(TEXT("/Game/"), TEXT("/Game/Nikki/"));
+		StaticMat.MaterialInterface = LoadObject<UMaterialInterface>(nullptr, *MaterialName);
         StaticMesh->GetStaticMaterials().Add(StaticMat);
     }
 	
@@ -130,7 +134,7 @@ UStaticMesh* UEFModelFactory::CreateStaticMesh(FLODData& Data, FName Name, UObje
     return StaticMesh;
 }
 
-USkeletalMesh* UEFModelFactory::CreateSkeletalMeshFromStatic(FString Name, FSkeletonData& SkeletonData, FLODData& Data, UStaticMesh* Mesh, EObjectFlags Flags)
+USkeletalMesh* UEFModelFactory::CreateSkeletalMeshFromStatic(FString Name, FSkeletonData& SkeletonData, TArray<FLODData>& Datas, UStaticMesh* Mesh, EObjectFlags Flags)
 {
 	FReferenceSkeleton RefSkeleton;
 	FSkeletalMeshImportData SkelMeshImportData;
@@ -142,22 +146,45 @@ USkeletalMesh* UEFModelFactory::CreateSkeletalMeshFromStatic(FString Name, FSkel
 	SkeletalMeshFactory->Skeleton = Skeleton;
 	SkeletalMeshFactory->ReferenceSkeleton = RefSkeleton;
 
-	IAssetTools& AssetTools = FAssetToolsModule::GetModule().Get();
-	USkeletalMesh* SkeletalMesh = Cast<USkeletalMesh>(AssetTools.CreateAsset(Name, FPackageName::GetLongPackagePath(Mesh->GetPackage()->GetName()), USkeletalMesh::StaticClass(), SkeletalMeshFactory));
-
-	SkeletalMesh->LoadLODImportedData(0, SkelMeshImportData);
-	TArray<SkeletalMeshImportData::FRawBoneInfluence> Influences;
-	for (auto i = 0; i < Data.Weights.Num(); i++)
+	FString SkeletalMeshPath = FPackageName::GetLongPackagePath(Mesh->GetPackage()->GetName()) + "/" + Name;
+	USkeletalMesh* SkeletalMesh = LoadObject<USkeletalMesh>(nullptr, *SkeletalMeshPath);
+	if (SkeletalMesh)
 	{
-		const auto Weight = Data.Weights[i];
-		SkeletalMeshImportData::FRawBoneInfluence Influence;
-		Influence.BoneIndex = int32(Weight.WeightBoneIndex);
-		Influence.VertexIndex = Weight.WeightVertexIndex;
-		Influence.Weight = Weight.WeightAmount;
-		Influences.Add(Influence);
+		return SkeletalMesh;
 	}
-	SkelMeshImportData.Influences = Influences;
-	SkeletalMesh->SaveLODImportedData(0, SkelMeshImportData);
+	IAssetTools& AssetTools = FAssetToolsModule::GetModule().Get();
+	SkeletalMesh = Cast<USkeletalMesh>(AssetTools.CreateAsset(Name, FPackageName::GetLongPackagePath(Mesh->GetPackage()->GetName()), USkeletalMesh::StaticClass(), SkeletalMeshFactory));
+
+	for (int32 LodIndex = 0; LodIndex < Datas.Num(); ++LodIndex)
+	{
+		auto& Data = Datas[LodIndex];
+		{
+			FMeshDescription* MeshDescription = SkeletalMesh->GetMeshDescription(LodIndex);
+			if (!MeshDescription->IsEmpty())
+			{
+				SkelMeshImportData = FSkeletalMeshImportData::CreateFromMeshDescription(*MeshDescription);
+			}
+		}
+		// SkeletalMesh->LoadLODImportedData(0, SkelMeshImportData);
+		TArray<SkeletalMeshImportData::FRawBoneInfluence> Influences;
+		for (auto i = 0; i < Data.Weights.Num(); i++)
+		{
+			const auto                                Weight = Data.Weights[i];
+			SkeletalMeshImportData::FRawBoneInfluence Influence;
+			Influence.BoneIndex   = int32(Weight.WeightBoneIndex);
+			Influence.VertexIndex = Weight.WeightVertexIndex;
+			Influence.Weight      = Weight.WeightAmount;
+			Influences.Add(Influence);
+		}
+		SkelMeshImportData.Influences = Influences;
+		// SkeletalMesh->SaveLODImportedData(LodIndex, SkelMeshImportData);
+		FMeshDescription MeshDescription;
+		if (SkelMeshImportData.GetMeshDescription(nullptr, &SkeletalMesh->GetLODInfo(LodIndex)->BuildSettings, MeshDescription))
+		{
+			SkeletalMesh->CreateMeshDescription(LodIndex, MoveTemp(MeshDescription));
+			SkeletalMesh->CommitMeshDescription(LodIndex);
+		}
+	}
 
 	SkeletalMesh->CalculateInvRefMatrices();
 	const FSkeletalMeshBuildSettings BuildOptions;
@@ -178,8 +205,19 @@ USkeletalMesh* UEFModelFactory::CreateSkeletalMeshFromStatic(FString Name, FSkel
 
 USkeleton* UEFModelFactory::CreateSkeleton(FString Name, UPackage* ParentPackage, EObjectFlags Flags, FSkeletonData& Data, FReferenceSkeleton& RefSkeleton, FSkeletalMeshImportData& SkeletalMeshImportData)
 {
-	FString SkeletonName = Name + "_Skeleton";
-	auto SkeletonPackage = CreatePackage(*FPaths::Combine(FPaths::GetPath(ParentPackage->GetPathName()), SkeletonName));
+	//Client/Content/Aki/Character/Role/FemaleM/Chun/R2T1ChunMd10011/Model/R2T1ChunMd10011_Skeleton.R2T1ChunMd10011_Skeleton
+	// /Game/Assets/Buildin/Character/Main/Nikki/Material/MI_Eye_R_V6.MI_Eye_R_V6
+	FString SkeletonPath = FString(Data.SkeletonPath.c_str());
+	SkeletonPath.ReplaceInline(TEXT("/Game/"), TEXT("/Game/Nikki/"));
+	FString Left;
+	FString SkeletonName;
+	if (!SkeletonPath.Split(TEXT("."), &Left, &SkeletonName))
+	{
+		SkeletonName = Name + "_Skeleton";
+	}
+	FString OldPath = *FPaths::Combine(FPaths::GetPath(ParentPackage->GetPathName()), SkeletonName);
+	auto SkeletonPackage = CreatePackage(*OldPath);
+
 	USkeleton* Skeleton = NewObject<USkeleton>(SkeletonPackage, FName(*SkeletonName), Flags);
 
 	FReferenceSkeletonModifier RefSkeletonModifier(RefSkeleton, Skeleton);

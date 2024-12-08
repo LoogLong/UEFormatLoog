@@ -17,5 +17,9 @@ class UEFORMAT_API UEFAnimFactory : public UFactory
 	bool bImport;
 	bool bImportAll;
 
+	UPROPERTY(BlueprintReadWrite)
+	bool bSilentImport;
+
+
 	virtual UObject* FactoryCreateFile(UClass* Class, UObject* Parent, FName Name, EObjectFlags Flags, const FString& Filename, const TCHAR* Params, FFeedbackContext* Warn, bool& bOutOperationCanceled) override;
 };

@@ -18,6 +18,7 @@ UEFAnimFactory::UEFAnimFactory(const FObjectInitializer & ObjectInitializer): Su
 	SupportedClass = UAnimSequence::StaticClass();
 	bCreateNew = false;
 	bEditorImport = true;
+	bSilentImport = false;
 	SettingsImporter = CreateDefaultSubobject<UEFAnimImportOptions>(TEXT("Anim Options"));
 }
 
@@ -32,9 +33,12 @@ UObject* UEFAnimFactory::FactoryCreateFile(UClass* Class, UObject* Parent, FName
 
 	UEFAnimReader Data = UEFAnimReader(Filename);
 	if (!Data.Read()) return nullptr;
-
+	if (Data.SkeletonPath.empty())
+	{
+		return nullptr;
+	}
 	//Ui
-	if (SettingsImporter->bInitialized == false)
+	if (SettingsImporter->bInitialized == false && !bSilentImport)
 	{
 		TSharedPtr<UEFAnimWidget> ImportOptionsWindow;
 		TSharedPtr<SWindow> ParentWindow;
@@ -55,10 +59,21 @@ UObject* UEFAnimFactory::FactoryCreateFile(UClass* Class, UObject* Parent, FName
 		bImportAll = ImportOptionsWindow.Get()->ShouldImportAll();
 		SettingsImporter->bInitialized = true;
 	}
+	FString SkeletonPath = FString(Data.SkeletonPath.c_str());
+	SkeletonPath.ReplaceInline(TEXT("/Game/"), TEXT("/Game/Nikki/"));
+	USkeleton* Skeleton = LoadObject<USkeleton>(nullptr, *SkeletonPath);
+	if (!Skeleton)
+	{
+		Skeleton = SettingsImporter->Skeleton;
+	}
+	// USkeleton* Skeleton = SettingsImporter->Skeleton;
+	if (!Skeleton)
+	{
+		return nullptr;
+	}
 
 	UAnimSequence* AnimSequence = NewObject<UAnimSequence>(Parent, Data.Header.ObjectName.c_str(), Flags);
 	IAnimationDataController& Controller = AnimSequence->GetController();
-	USkeleton* Skeleton = SettingsImporter->Skeleton;
 
 	AnimSequence->SetSkeleton(Skeleton);
 	Controller.OpenBracket(FText::FromString("Importing UEAnim Animation"));
@@ -115,6 +130,7 @@ UObject* UEFAnimFactory::FactoryCreateFile(UClass* Class, UObject* Parent, FName
 				RotKeys[RotIndex].QuatValue.W = -RotKeys[RotIndex].QuatValue.W;
         
 				FinalRotKeys[j] = RotKeys[RotIndex].QuatValue;
+				FinalRotKeys[j].Normalize();
 				PrevRot = RotKeys[RotIndex].QuatValue;
 				RotIndex++;
 			}

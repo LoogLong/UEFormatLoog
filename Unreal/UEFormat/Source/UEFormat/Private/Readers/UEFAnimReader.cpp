@@ -16,7 +16,7 @@ bool UEFAnimReader::Read() {
 	Header.IsCompressed = ReadData<bool>(Ar);
 	NumFrames = ReadData<int32>(Ar);
 	FramesPerSecond = ReadData<float>(Ar);
-
+	SkeletonPath = ReadFString(Ar);
 	ReadArchive(Ar);
 	return true;
 }
@@ -24,6 +24,15 @@ bool UEFAnimReader::Read() {
 void UEFAnimReader::ReadArchive(std::ifstream& Archive)
 {
 	while (!Archive.eof()) {
+		const auto CurrentPos = Ar.tellg();
+		Ar.seekg(0, std::ios::end);
+		const auto EndPos = Ar.tellg();
+		Ar.seekg(CurrentPos, std::ios::beg);
+		if (CurrentPos == EndPos)
+		{
+			break;
+		}
+
 		std::string ChunkName = ReadFString(Archive);
 		const int32 ArraySize = ReadData<int32>(Archive);
 		const int32 ByteSize = ReadData<int32>(Archive);
